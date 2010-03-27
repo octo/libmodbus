@@ -1472,8 +1472,16 @@ void modbus_init_rtu(modbus_param_t *mb_param, const char *device,
 
         if ((mb_param == NULL) || (device == NULL) || (parity == NULL))
                 return;
-        if (mb_param->obj != NULL)
-                return;
+
+        /* Previously the struct was nulled by the init functions. This means
+         * that there may be applications out there that pass an uninitialized
+         * struct to us. Take care of that and complain. */
+        if (mb_param->obj != NULL) {
+                fprintf (stderr, "WARNING: mb_param->obj not NULL when "
+                                "calling modbus_init_rtu.\n");
+                memset (mb_param, 0, sizeof (*mb_param));
+                mb_param->obj = NULL;
+        }
 
         status = modbus_object_allocate (mb_param);
         if (status != 0)
@@ -1505,8 +1513,16 @@ void modbus_init_tcp(modbus_param_t *mb_param, const char *ip, int port, int sla
 
         if ((mb_param == NULL) || (ip == NULL))
                 return;
-        if (mb_param->obj != NULL)
-                return;
+
+        /* Previously the struct was nulled by the init functions. This means
+         * that there may be applications out there that pass an uninitialized
+         * struct to us. Take care of that and complain. */
+        if (mb_param->obj != NULL) {
+                fprintf (stderr, "WARNING: mb_param->obj not NULL when "
+                                "calling modbus_init_tcp.\n");
+                memset (mb_param, 0, sizeof (*mb_param));
+                mb_param->obj = NULL;
+        }
 
         status = modbus_object_allocate (mb_param);
         if (status != 0)
