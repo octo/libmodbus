@@ -22,6 +22,8 @@
 #include <time.h>
 #include <sys/time.h>
 
+/* XXX: "version.h" must be included before "modbus.h". */
+#include "version.h"
 #include "modbus.h"
 
 /* Tests based on PI-MBUS-300 documentation */

@@ -61,6 +61,8 @@
 #endif
 
 #include "config.h"
+/* XXX: "version.h" must be included before "modbus.h". */
+#include "version.h"
 #include "modbus.h"
 
 #define UNKNOWN_ERROR_MSG "Not defined in modbus specification"
@@ -2010,4 +2012,14 @@ void modbus_write_float(float real, uint16_t *dest)
         /* Implicit mask 0xFFFF */
         dest[0] = ireal;
         dest[1] = ireal >> 16;
+}
+
+int modbus_version (void)
+{
+        return (MB_VERSION);
+}
+
+const char *modbus_version_string (void)
+{
+        return (MB_VERSION_STRING);
 }

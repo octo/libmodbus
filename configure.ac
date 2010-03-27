@@ -2,11 +2,27 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.59)
-AC_INIT(libmodbus, 2.0.3, stephane.raimbault@gmail.com)
+AC_INIT(libmodbus, 2.1.0, stephane.raimbault@gmail.com)
 AC_CONFIG_SRCDIR([src/modbus.c])
 AC_CONFIG_HEADERS([config.h])
 AM_INIT_AUTOMAKE
 AM_DISABLE_STATIC
+
+# API version
+LIBMODBUS_MAJOR=`echo $PACKAGE_VERSION | cut -d'.' -f1`
+LIBMODBUS_MINOR=`echo $PACKAGE_VERSION | cut -d'.' -f2`
+LIBMODBUS_PATCH=`echo $PACKAGE_VERSION | cut -d'.' -f3`
+AC_SUBST(LIBMODBUS_MAJOR)
+AC_SUBST(LIBMODBUS_MINOR)
+AC_SUBST(LIBMODBUS_PATCH)
+
+# ABI version
+LIBMODBUS_CURRENT=3
+LIBMODBUS_REVISION=0
+LIBMODBUS_AGE=0
+AC_SUBST(LIBMODBUS_CURRENT)
+AC_SUBST(LIBMODBUS_REVISION)
+AC_SUBST(LIBMODBUS_AGE)
 
 # Checks for programs.
 AC_PROG_CC
@@ -40,6 +56,7 @@ AC_CHECK_FUNCS([gettimeofday inet_ntoa memset select socket strerror])
 AC_OUTPUT([
         Makefile
         src/Makefile
+        src/version.h
         tests/Makefile
         modbus.pc
 ])

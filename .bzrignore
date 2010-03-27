@@ -25,6 +25,7 @@ tests/unit-test-slave
 src/.deps
 src/.libs
 src/modbus.lo
+src/version.h
 tests/.deps
 tests/.libs
 modbus/libmodbus.la

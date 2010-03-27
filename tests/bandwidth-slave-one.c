@@ -20,6 +20,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* XXX: "version.h" must be included before "modbus.h". */
+#include "version.h"
 #include "modbus.h"
 
 #define SLAVE 0x11

@@ -20,6 +20,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* XXX: "version.h" must be included before "modbus.h". */
+#include "version.h"
 #include "modbus.h"
 
 /* The goal of this program is to check all major functions of
