@@ -451,7 +451,7 @@ int main(void)
                                      UT_HOLDING_REGISTERS_ADDRESS+1,
                                      UT_HOLDING_REGISTERS_NB_POINTS,
                                      tab_rp_registers);
-        printf("1/2 No reply from slave %d: ", mb_param.slave);
+        printf("1/2 No reply from slave %d: ", modbus_get_slave (&mb_param));
         if (ret == SELECT_TIMEOUT) {
                 printf("OK\n");
         } else {

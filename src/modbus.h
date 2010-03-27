@@ -146,43 +146,15 @@ extern "C" {
 typedef enum { RTU=0, TCP } type_com_t;
 typedef enum { FLUSH_OR_CONNECT_ON_ERROR, NOP_ON_ERROR } error_handling_t;
 
-/* This structure is byte-aligned */
+/* Opaque structure for internal use. */
+struct modbus_object_s;
+typedef struct modbus_object_s modbus_object_t;
+
+/* This structure is a little hack to allow programs that have been written
+ * with older versions to still allocate "modbus_param_t". The pointer to the
+ * object is allocated with one of the modbus_init_* functions. */
 typedef struct {
-        /* Slave address */
-        int slave;
-        /* Descriptor (tty or socket) */
-        int fd;
-        /* Communication mode: RTU or TCP */
-        type_com_t type_com;
-        /* Flag debug */
-        int debug;
-        /* TCP port */
-        int port;
-        /* Device: "/dev/ttyS0", "/dev/ttyUSB0" or "/dev/tty.USA19*"
-           on Mac OS X for KeySpan USB<->Serial adapters this string
-           had to be made bigger on OS X as the directory+file name
-           was bigger than 19 bytes. Making it 67 bytes for now, but
-           OS X does support 256 byte file names. May become a problem
-           in the future. */
-#ifdef __APPLE_CC__
-        char device[64];
-#else
-        char device[16];
-#endif
-        /* Bauds: 9600, 19200, 57600, 115200, etc */
-        int baud;
-        /* Data bit */
-        uint8_t data_bit;
-        /* Stop bit */
-        uint8_t stop_bit;
-        /* Parity: "even", "odd", "none" */
-        char parity[5];
-        /* In error_treat with TCP, do a reconnect or just dump the error */
-        uint8_t error_handling;
-        /* IP address */
-        char ip[16];
-        /* Save old termios settings */
-        struct termios old_tios;
+        modbus_object_t *obj;
 } modbus_param_t;
 
 typedef struct {
@@ -265,6 +237,9 @@ void modbus_init_tcp(modbus_param_t *mb_param, const char *ip_address, int port,
 /* Define the slave number.
    The special value MODBUS_BROADCAST_ADDRESS can be used. */
 void modbus_set_slave(modbus_param_t *mb_param, int slave);
+
+/* Retrieve the slave number. Returns less than zero on failure. */
+int modbus_get_slave (modbus_param_t *mb_param);
 
 /* By default, the error handling mode used is CONNECT_ON_ERROR.
 

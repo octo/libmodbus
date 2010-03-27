@@ -60,10 +60,59 @@
 #define UINT16_MAX 0xFFFF
 #endif
 
+#ifndef ENOTCONN
+# define ENOTCONN EINVAL
+#endif
+
 #include "config.h"
 #include "modbus.h"
 
 #define UNKNOWN_ERROR_MSG "Not defined in modbus specification"
+
+#define SSTRNCPY(dst,src) do {                 \
+        strncpy ((dst), (src), sizeof (dst));  \
+        (dst)[sizeof (dst) - 1] = 0;           \
+} while (0)
+
+/* This structure is byte-aligned */
+struct modbus_object_s
+{
+        /* Slave address */
+        int slave;
+        /* Descriptor (tty or socket) */
+        int fd;
+        /* Communication mode: RTU or TCP */
+        type_com_t type_com;
+        /* Flag debug */
+        int debug;
+        /* TCP port */
+        int port;
+        /* Device: "/dev/ttyS0", "/dev/ttyUSB0" or "/dev/tty.USA19*"
+           on Mac OS X for KeySpan USB<->Serial adapters this string
+           had to be made bigger on OS X as the directory+file name
+           was bigger than 19 bytes. Making it 67 bytes for now, but
+           OS X does support 256 byte file names. May become a problem
+           in the future. */
+#ifdef __APPLE_CC__
+        char device[64];
+#else
+        char device[16];
+#endif
+        /* Bauds: 9600, 19200, 57600, 115200, etc */
+        int baud;
+        /* Data bit */
+        uint8_t data_bit;
+        /* Stop bit */
+        uint8_t stop_bit;
+        /* Parity: "even", "odd", "none" */
+        char parity[5];
+        /* In error_treat with TCP, do a reconnect or just dump the error */
+        uint8_t error_handling;
+        /* IP address */
+        char ip[16];
+        /* Save old termios settings */
+        struct termios old_tios;
+};
 
 /* This structure reduces the number of params in functions and so
  * optimizes the speed of execution (~ 37%). */
@@ -169,7 +218,7 @@ static void error_treat(modbus_param_t *mb_param, int code, const char *string)
 {
         printf("\nERROR %s (%0X)\n", string, -code);
 
-        if (mb_param->error_handling == FLUSH_OR_CONNECT_ON_ERROR) {
+        if (mb_param->obj->error_handling == FLUSH_OR_CONNECT_ON_ERROR) {
                 switch (code) {
                 case INVALID_DATA:
                 case INVALID_CRC:
@@ -189,17 +238,41 @@ static void error_treat(modbus_param_t *mb_param, int code, const char *string)
         }
 }
 
+static int modbus_object_allocate (modbus_param_t *mb_param)
+{
+        if (mb_param == NULL)
+                return (EINVAL);
+        if (mb_param->obj != NULL)
+                return (0);
+
+        mb_param->obj = malloc (sizeof (*mb_param->obj));
+        if (mb_param->obj == NULL)
+                return (errno);
+        memset (mb_param->obj, 0, sizeof (*mb_param->obj));
+        return (0);
+} /* int modbus_object_allocate */
+
+static int modbus_object_free (modbus_param_t *mb_param)
+{
+        if (mb_param == NULL)
+                return (EINVAL);
+
+        free (mb_param->obj);
+        mb_param->obj = NULL;
+        return (0);
+} /* int modbus_object_free */
+
 void modbus_flush(modbus_param_t *mb_param)
 {
-        if (mb_param->type_com == RTU) {
-                tcflush(mb_param->fd, TCIOFLUSH);
+        if (mb_param->obj->type_com == RTU) {
+                tcflush(mb_param->obj->fd, TCIOFLUSH);
         } else {
                 int ret;
                 do {
                         /* Extract the garbage from the socket */
                         char devnull[MAX_ADU_LENGTH_TCP];
 #if (!HAVE_DECL___CYGWIN__)
-                        ret = recv(mb_param->fd, devnull, MAX_ADU_LENGTH_TCP, MSG_DONTWAIT);
+                        ret = recv(mb_param->obj->fd, devnull, MAX_ADU_LENGTH_TCP, MSG_DONTWAIT);
 #else
                         /* On Cygwin, it's a bit more complicated to not wait */
                         fd_set rfds;
@@ -208,17 +281,17 @@ void modbus_flush(modbus_param_t *mb_param)
                         tv.tv_sec = 0;
                         tv.tv_usec = 0;
                         FD_ZERO(&rfds);
-                        FD_SET(mb_param->fd, &rfds);
-                        ret = select(mb_param->fd+1, &rfds, NULL, NULL, &tv);
+                        FD_SET(mb_param->obj->fd, &rfds);
+                        ret = select(mb_param->obj->fd+1, &rfds, NULL, NULL, &tv);
                         if (ret > 0) {
-                                ret = recv(mb_param->fd, devnull, MAX_ADU_LENGTH_TCP, 0);
+                                ret = recv(mb_param->obj->fd, devnull, MAX_ADU_LENGTH_TCP, 0);
                         } else if (ret == -1) {
                                 /* error_treat() doesn't call modbus_flush() in
                                    this case (avoid infinite loop) */
                                 error_treat(mb_param, SELECT_FAILURE, "Select failure");
                         }
 #endif
-                        if (mb_param->debug && ret > 0) {
+                        if (mb_param->obj->debug && ret > 0) {
                                 printf("%d bytes flushed\n", ret);
                         }
                 } while (ret > 0);
@@ -232,7 +305,7 @@ static unsigned int compute_response_length(modbus_param_t *mb_param,
         int length;
         int offset;
 
-        offset = TAB_HEADER_LENGTH[mb_param->type_com];
+        offset = TAB_HEADER_LENGTH[mb_param->obj->type_com];
 
         switch (query[offset]) {
         case FC_READ_COIL_STATUS:
@@ -257,7 +330,7 @@ static unsigned int compute_response_length(modbus_param_t *mb_param,
                 length = 5;
         }
 
-        return length + offset + TAB_CHECKSUM_LENGTH[mb_param->type_com];
+        return length + offset + TAB_CHECKSUM_LENGTH[mb_param->obj->type_com];
 }
 
 /* Builds a RTU query header */
@@ -318,11 +391,11 @@ static int build_query_basis(modbus_param_t *mb_param,
                              int function, int start_addr,
                              int nb, uint8_t *query)
 {
-        if (mb_param->type_com == RTU)
-                return build_query_basis_rtu(mb_param->slave, function,
+        if (mb_param->obj->type_com == RTU)
+                return build_query_basis_rtu(mb_param->obj->slave, function,
                                              start_addr, nb, query);
         else
-                return build_query_basis_tcp(mb_param->slave, function,
+                return build_query_basis_tcp(mb_param->obj->slave, function,
                                              start_addr, nb, query);
 }
 
@@ -360,7 +433,7 @@ static int build_response_basis_tcp(sft_t *sft, uint8_t *response)
 static int build_response_basis(modbus_param_t *mb_param, sft_t *sft,
                                 uint8_t *response)
 {
-        if (mb_param->type_com == RTU)
+        if (mb_param->obj->type_com == RTU)
                 return build_response_basis_rtu(sft, response);
         else
                 return build_response_basis_tcp(sft, response);
@@ -428,7 +501,7 @@ static int modbus_send(modbus_param_t *mb_param, uint8_t *query,
         uint16_t s_crc;
         int i;
 
-        if (mb_param->type_com == RTU) {
+        if (mb_param->obj->type_com == RTU) {
                 s_crc = crc16(query, query_length);
                 query[query_length++] = s_crc >> 8;
                 query[query_length++] = s_crc & 0x00FF;
@@ -436,16 +509,16 @@ static int modbus_send(modbus_param_t *mb_param, uint8_t *query,
                 set_message_length_tcp(query, query_length);
         }
 
-        if (mb_param->debug) {
+        if (mb_param->obj->debug) {
                 for (i = 0; i < query_length; i++)
                         printf("[%.2X]", query[i]);
                 printf("\n");
         }
 
-        if (mb_param->type_com == RTU)
-                ret = write(mb_param->fd, query, query_length);
+        if (mb_param->obj->type_com == RTU)
+                ret = write(mb_param->obj->fd, query, query_length);
         else
-                ret = send(mb_param->fd, query, query_length, 0);
+                ret = send(mb_param->obj->fd, query, query_length, 0);
 
         /* Return the number of bytes written (0 to n)
            or SOCKET_FAILURE on error */
@@ -481,30 +554,30 @@ static uint8_t compute_query_length_header(int function)
 /* Computes the length of the data to write in the query */
 static int compute_query_length_data(modbus_param_t *mb_param, uint8_t *msg)
 {
-        int function = msg[TAB_HEADER_LENGTH[mb_param->type_com]];
+        int function = msg[TAB_HEADER_LENGTH[mb_param->obj->type_com]];
         int length;
 
         if (function == FC_FORCE_MULTIPLE_COILS ||
             function == FC_PRESET_MULTIPLE_REGISTERS)
-                length = msg[TAB_HEADER_LENGTH[mb_param->type_com] + 5];
+                length = msg[TAB_HEADER_LENGTH[mb_param->obj->type_com] + 5];
         else if (function == FC_REPORT_SLAVE_ID)
-                length = msg[TAB_HEADER_LENGTH[mb_param->type_com] + 1];
+                length = msg[TAB_HEADER_LENGTH[mb_param->obj->type_com] + 1];
         else
                 length = 0;
 
-        length += TAB_CHECKSUM_LENGTH[mb_param->type_com];
+        length += TAB_CHECKSUM_LENGTH[mb_param->obj->type_com];
 
         return length;
 }
 
 #define WAIT_DATA()                                                                \
 {                                                                                  \
-    while ((select_ret = select(mb_param->fd+1, &rfds, NULL, NULL, &tv)) == -1) {  \
+    while ((select_ret = select(mb_param->obj->fd+1, &rfds, NULL, NULL, &tv)) == -1) {  \
             if (errno == EINTR) {                                                  \
                     printf("A non blocked signal was caught\n");                   \
                     /* Necessary after an error */                                 \
                     FD_ZERO(&rfds);                                                \
-                    FD_SET(mb_param->fd, &rfds);                                   \
+                    FD_SET(mb_param->obj->fd, &rfds);                              \
             } else {                                                               \
                     error_treat(mb_param, SELECT_FAILURE, "Select failure");       \
                     return SELECT_FAILURE;                                         \
@@ -548,7 +621,7 @@ static int receive_msg(modbus_param_t *mb_param,
          * time out can quit the function. */
         (*p_msg_length) = 0;
 
-        if (mb_param->debug) {
+        if (mb_param->obj->debug) {
                 if (msg_length_computed == MSG_LENGTH_UNDEFINED)
                         printf("Waiting for a message...\n");
                 else
@@ -558,7 +631,7 @@ static int receive_msg(modbus_param_t *mb_param,
 
         /* Add a file descriptor to the set */
         FD_ZERO(&rfds);
-        FD_SET(mb_param->fd, &rfds);
+        FD_SET(mb_param->obj->fd, &rfds);
 
         if (msg_length_computed == MSG_LENGTH_UNDEFINED) {
                 /* Wait for a message */
@@ -570,7 +643,7 @@ static int receive_msg(modbus_param_t *mb_param,
                  * At the first step, we want to reach the function
                  * code because all packets have that information. */
                 state = FUNCTION;
-                msg_length_computed = TAB_HEADER_LENGTH[mb_param->type_com] + 1;
+                msg_length_computed = TAB_HEADER_LENGTH[mb_param->obj->type_com] + 1;
         } else {
                 tv.tv_sec = 0;
                 tv.tv_usec = TIME_OUT_BEGIN_OF_TRAME;
@@ -584,10 +657,10 @@ static int receive_msg(modbus_param_t *mb_param,
 
         p_msg = msg;
         while (select_ret) {
-                if (mb_param->type_com == RTU)
-                        read_ret = read(mb_param->fd, p_msg, length_to_read);
+                if (mb_param->obj->type_com == RTU)
+                        read_ret = read(mb_param->obj->fd, p_msg, length_to_read);
                 else
-                        read_ret = recv(mb_param->fd, p_msg, length_to_read, 0);
+                        read_ret = recv(mb_param->obj->fd, p_msg, length_to_read, 0);
 
                 if (read_ret == 0) {
                         return CONNECTION_CLOSED;
@@ -602,7 +675,7 @@ static int receive_msg(modbus_param_t *mb_param,
                 (*p_msg_length) += read_ret;
 
                 /* Display the hex code of each character received */
-                if (mb_param->debug) {
+                if (mb_param->obj->debug) {
                         int i;
                         for (i=0; i < read_ret; i++)
                                 printf("<%.2X>", p_msg[i]);
@@ -616,7 +689,7 @@ static int receive_msg(modbus_param_t *mb_param,
                         case FUNCTION:
                                 /* Function code position */
                                 length_to_read = compute_query_length_header(
-                                        msg[TAB_HEADER_LENGTH[mb_param->type_com]]);
+                                        msg[TAB_HEADER_LENGTH[mb_param->obj->type_com]]);
                                 msg_length_computed += length_to_read;
                                 /* It's useless to check
                                    p_msg_length_computed value in this
@@ -626,7 +699,7 @@ static int receive_msg(modbus_param_t *mb_param,
                         case BYTE:
                                 length_to_read = compute_query_length_data(mb_param, msg);
                                 msg_length_computed += length_to_read;
-                                if (msg_length_computed > TAB_MAX_ADU_LENGTH[mb_param->type_com]) {
+                                if (msg_length_computed > TAB_MAX_ADU_LENGTH[mb_param->obj->type_com]) {
                                      error_treat(mb_param, INVALID_DATA, "Too many data");
                                      return INVALID_DATA;
                                 }
@@ -654,10 +727,10 @@ static int receive_msg(modbus_param_t *mb_param,
                 }
         }
 
-        if (mb_param->debug)
+        if (mb_param->obj->debug)
                 printf("\n");
 
-        if (mb_param->type_com == RTU) {
+        if (mb_param->obj->type_com == RTU) {
                 return check_crc16(mb_param, msg, (*p_msg_length));
         } else {
                 /* OK */
@@ -679,7 +752,7 @@ int modbus_slave_receive(modbus_param_t *mb_param, int sockfd,
         int ret;
 
         if (sockfd != -1) {
-                mb_param->fd = sockfd;
+                mb_param->obj->fd = sockfd;
         }
 
         /* The length of the query to receive isn't known. */
@@ -704,7 +777,7 @@ static int modbus_receive(modbus_param_t *mb_param,
         int ret;
         int response_length;
         int response_length_computed;
-        int offset = TAB_HEADER_LENGTH[mb_param->type_com];
+        int offset = TAB_HEADER_LENGTH[mb_param->obj->type_com];
 
         response_length_computed = compute_response_length(mb_param, query);
         ret = receive_msg(mb_param, response_length_computed,
@@ -759,7 +832,7 @@ static int modbus_receive(modbus_param_t *mb_param,
                 }
         } else if (ret == SELECT_TIMEOUT) {
 
-                if (response_length == (offset + 2 + TAB_CHECKSUM_LENGTH[mb_param->type_com])) {
+                if (response_length == (offset + 2 + TAB_CHECKSUM_LENGTH[mb_param->obj->type_com])) {
                         /* EXCEPTION CODE RECEIVED */
 
                         /* Optimization allowed because exception response is
@@ -767,7 +840,7 @@ static int modbus_receive(modbus_param_t *mb_param,
                            raise a timeout error */
 
                         /* CRC must be checked here (not done in receive_msg) */
-                        if (mb_param->type_com == RTU) {
+                        if (mb_param->obj->type_com == RTU) {
                                 ret = check_crc16(mb_param, response, response_length);
                                 if (ret != 0)
                                         return ret;
@@ -860,7 +933,7 @@ static int response_exception(modbus_param_t *mb_param, sft_t *sft,
 void modbus_slave_manage(modbus_param_t *mb_param, const uint8_t *query,
                          int query_length, modbus_mapping_t *mb_mapping)
 {
-        int offset = TAB_HEADER_LENGTH[mb_param->type_com];
+        int offset = TAB_HEADER_LENGTH[mb_param->obj->type_com];
         int slave = query[offset - 1];
         int function = query[offset];
         uint16_t address = (query[offset + 1] << 8) + query[offset + 2];
@@ -868,18 +941,18 @@ void modbus_slave_manage(modbus_param_t *mb_param, const uint8_t *query,
         int resp_length = 0;
         sft_t sft;
 
-        if (slave != mb_param->slave && slave != MODBUS_BROADCAST_ADDRESS) {
+        if (slave != mb_param->obj->slave && slave != MODBUS_BROADCAST_ADDRESS) {
                 // Ignores the query (not for me)
-                if (mb_param->debug) {
+                if (mb_param->obj->debug) {
                         printf("Request for slave %d ignored (not %d)\n",
-                               slave, mb_param->slave);
+                               slave, mb_param->obj->slave);
                 }
                 return;
         }
 
         sft.slave = slave;
         sft.function = function;
-        if (mb_param->type_com == TCP) {
+        if (mb_param->obj->type_com == TCP) {
                 sft.t_id = (query[0] << 8) + query[1];
         } else {
                 sft.t_id = 0;
@@ -1078,7 +1151,7 @@ static int read_io_status(modbus_param_t *mb_param, int function,
                 if (ret < 0)
                         return ret;
 
-                offset = TAB_HEADER_LENGTH[mb_param->type_com];
+                offset = TAB_HEADER_LENGTH[mb_param->obj->type_com];
                 offset_end = offset + ret;
                 for (i = offset; i < offset_end; i++) {
                         /* Shift reg hi_byte to temp */
@@ -1164,7 +1237,7 @@ static int read_registers(modbus_param_t *mb_param, int function,
 
                 ret = modbus_receive(mb_param, query, response);
 
-                offset = TAB_HEADER_LENGTH[mb_param->type_com];
+                offset = TAB_HEADER_LENGTH[mb_param->obj->type_com];
 
                 /* If ret is negative, the loop is jumped ! */
                 for (i = 0; i < ret; i++) {
@@ -1374,7 +1447,7 @@ int report_slave_id(modbus_param_t *mb_param, uint8_t *data_dest)
                 if (ret < 0)
                         return ret;
 
-                offset = TAB_HEADER_LENGTH[mb_param->type_com] - 1;
+                offset = TAB_HEADER_LENGTH[mb_param->obj->type_com] - 1;
                 offset_end = offset + ret;
 
                 for (i = offset; i < offset_end; i++)
@@ -1395,16 +1468,26 @@ void modbus_init_rtu(modbus_param_t *mb_param, const char *device,
                      int baud, const char *parity, int data_bit,
                      int stop_bit, int slave)
 {
-        memset(mb_param, 0, sizeof(modbus_param_t));
-        strcpy(mb_param->device, device);
-        mb_param->baud = baud;
-        strcpy(mb_param->parity, parity);
-        mb_param->debug = FALSE;
-        mb_param->data_bit = data_bit;
-        mb_param->stop_bit = stop_bit;
-        mb_param->type_com = RTU;
-        mb_param->error_handling = FLUSH_OR_CONNECT_ON_ERROR;
-        mb_param->slave = slave;
+        int status;
+
+        if ((mb_param == NULL) || (device == NULL) || (parity == NULL))
+                return;
+        if (mb_param->obj != NULL)
+                return;
+
+        status = modbus_object_allocate (mb_param);
+        if (status != 0)
+                return;
+
+        SSTRNCPY (mb_param->obj->device, device);
+        mb_param->obj->baud = baud;
+        SSTRNCPY (mb_param->obj->parity, parity);
+        mb_param->obj->debug = FALSE;
+        mb_param->obj->data_bit = data_bit;
+        mb_param->obj->stop_bit = stop_bit;
+        mb_param->obj->type_com = RTU;
+        mb_param->obj->error_handling = FLUSH_OR_CONNECT_ON_ERROR;
+        mb_param->obj->slave = slave;
 }
 
 /* Initializes the modbus_param_t structure for TCP.
@@ -1418,20 +1501,40 @@ void modbus_init_rtu(modbus_param_t *mb_param, const char *device,
 */
 void modbus_init_tcp(modbus_param_t *mb_param, const char *ip, int port, int slave)
 {
-        memset(mb_param, 0, sizeof(modbus_param_t));
-        strncpy(mb_param->ip, ip, sizeof(char)*16);
-        mb_param->port = port;
-        mb_param->type_com = TCP;
-        mb_param->error_handling = FLUSH_OR_CONNECT_ON_ERROR;
-        mb_param->slave = slave;
+        int status;
+
+        if ((mb_param == NULL) || (ip == NULL))
+                return;
+        if (mb_param->obj != NULL)
+                return;
+
+        status = modbus_object_allocate (mb_param);
+        if (status != 0)
+                return;
+
+        SSTRNCPY (mb_param->obj->ip, ip);
+        mb_param->obj->port = port;
+        mb_param->obj->type_com = TCP;
+        mb_param->obj->error_handling = FLUSH_OR_CONNECT_ON_ERROR;
+        mb_param->obj->slave = slave;
 }
 
 /* Define the slave number.
    The special value MODBUS_BROADCAST_ADDRESS can be used. */
 void modbus_set_slave(modbus_param_t *mb_param, int slave)
 {
-        mb_param->slave = slave;
+        mb_param->obj->slave = slave;
 }
+
+int modbus_get_slave (modbus_param_t *mb_param)
+{
+        if (mb_param == NULL)
+                return (-EINVAL);
+        if (mb_param->obj == NULL)
+                return (-ENOTCONN);
+
+        return (mb_param->obj->slave);
+} /* int modbus_get_slave */
 
 /* By default, the error handling mode used is FLUSH_OR_CONNECT_ON_ERROR.
 
@@ -1447,7 +1550,7 @@ void modbus_set_error_handling(modbus_param_t *mb_param,
 {
         if (error_handling == FLUSH_OR_CONNECT_ON_ERROR ||
             error_handling == NOP_ON_ERROR) {
-                mb_param->error_handling = error_handling;
+                mb_param->obj->error_handling = error_handling;
         } else {
                 printf("Invalid setting for error handling (not changed)\n");
         }
@@ -1460,9 +1563,9 @@ static int modbus_connect_rtu(modbus_param_t *mb_param)
         struct termios tios;
         speed_t speed;
 
-        if (mb_param->debug) {
+        if (mb_param->obj->debug) {
                 printf("Opening %s at %d bauds (%s)\n",
-                       mb_param->device, mb_param->baud, mb_param->parity);
+                       mb_param->obj->device, mb_param->obj->baud, mb_param->obj->parity);
         }
 
         /* The O_NOCTTY flag tells UNIX that this program doesn't want
@@ -1472,23 +1575,23 @@ static int modbus_connect_rtu(modbus_param_t *mb_param)
 
            Timeouts are ignored in canonical input mode or when the
            NDELAY option is set on the file via open or fcntl */
-        mb_param->fd = open(mb_param->device, O_RDWR | O_NOCTTY | O_NDELAY | O_EXCL);
-        if (mb_param->fd < 0) {
+        mb_param->obj->fd = open(mb_param->obj->device, O_RDWR | O_NOCTTY | O_NDELAY | O_EXCL);
+        if (mb_param->obj->fd < 0) {
                 perror("open");
                 printf("ERROR Can't open the device %s (%s)\n",
-                       mb_param->device, strerror(errno));
+                       mb_param->obj->device, strerror(errno));
                 return -1;
         }
 
         /* Save */
-        tcgetattr(mb_param->fd, &(mb_param->old_tios));
+        tcgetattr(mb_param->obj->fd, &(mb_param->obj->old_tios));
 
         memset(&tios, 0, sizeof(struct termios));
 
         /* C_ISPEED     Input baud (new interface)
            C_OSPEED     Output baud (new interface)
         */
-        switch (mb_param->baud) {
+        switch (mb_param->obj->baud) {
         case 110:
                 speed = B110;
                 break;
@@ -1525,7 +1628,7 @@ static int modbus_connect_rtu(modbus_param_t *mb_param)
         default:
                 speed = B9600;
                 printf("WARNING Unknown baud rate %d for %s (B9600 used)\n",
-                       mb_param->baud, mb_param->device);
+                       mb_param->obj->baud, mb_param->obj->device);
         }
 
         /* Set the baud rate */
@@ -1546,7 +1649,7 @@ static int modbus_connect_rtu(modbus_param_t *mb_param)
            CSIZE        Bit mask for data bits
         */
         tios.c_cflag &= ~CSIZE;
-        switch (mb_param->data_bit) {
+        switch (mb_param->obj->data_bit) {
         case 5:
                 tios.c_cflag |= CS5;
                 break;
@@ -1563,16 +1666,16 @@ static int modbus_connect_rtu(modbus_param_t *mb_param)
         }
 
         /* Stop bit (1 or 2) */
-        if (mb_param->stop_bit == 1)
+        if (mb_param->obj->stop_bit == 1)
                 tios.c_cflag &=~ CSTOPB;
         else /* 2 */
                 tios.c_cflag |= CSTOPB;
 
         /* PARENB       Enable parity bit
            PARODD       Use odd parity instead of even */
-        if (strncmp(mb_param->parity, "none", 4) == 0) {
+        if (strncmp(mb_param->obj->parity, "none", 4) == 0) {
                 tios.c_cflag &=~ PARENB;
-        } else if (strncmp(mb_param->parity, "even", 4) == 0) {
+        } else if (strncmp(mb_param->obj->parity, "even", 4) == 0) {
                 tios.c_cflag |= PARENB;
                 tios.c_cflag &=~ PARODD;
         } else {
@@ -1638,7 +1741,7 @@ static int modbus_connect_rtu(modbus_param_t *mb_param)
            IUCLC        Map uppercase to lowercase
            IMAXBEL      Echo BEL on input line too long
         */
-        if (strncmp(mb_param->parity, "none", 4) == 0) {
+        if (strncmp(mb_param->obj->parity, "none", 4) == 0) {
                 tios.c_iflag &= ~INPCK;
         } else {
                 tios.c_iflag |= INPCK;
@@ -1700,7 +1803,7 @@ static int modbus_connect_rtu(modbus_param_t *mb_param)
         tios.c_cc[VMIN] = 0;
         tios.c_cc[VTIME] = 0;
 
-        if (tcsetattr(mb_param->fd, TCSANOW, &tios) < 0) {
+        if (tcsetattr(mb_param->obj->fd, TCSANOW, &tios) < 0) {
                 perror("tcsetattr\n");
                 return -1;
         }
@@ -1715,19 +1818,19 @@ static int modbus_connect_tcp(modbus_param_t *mb_param)
         int option;
         struct sockaddr_in addr;
 
-        mb_param->fd = socket(PF_INET, SOCK_STREAM, 0);
-        if (mb_param->fd < 0) {
-                return mb_param->fd;
+        mb_param->obj->fd = socket(PF_INET, SOCK_STREAM, 0);
+        if (mb_param->obj->fd < 0) {
+                return mb_param->obj->fd;
         }
 
         /* Set the TCP no delay flag */
         /* SOL_TCP = IPPROTO_TCP */
         option = 1;
-        ret = setsockopt(mb_param->fd, IPPROTO_TCP, TCP_NODELAY,
+        ret = setsockopt(mb_param->obj->fd, IPPROTO_TCP, TCP_NODELAY,
                          (const void *)&option, sizeof(int));
         if (ret < 0) {
                 perror("setsockopt TCP_NODELAY");
-                close(mb_param->fd);
+                close(mb_param->obj->fd);
                 return ret;
         }
 
@@ -1738,27 +1841,27 @@ static int modbus_connect_tcp(modbus_param_t *mb_param)
          **/
         /* Set the IP low delay option */
         option = IPTOS_LOWDELAY;
-        ret = setsockopt(mb_param->fd, IPPROTO_IP, IP_TOS,
+        ret = setsockopt(mb_param->obj->fd, IPPROTO_IP, IP_TOS,
                          (const void *)&option, sizeof(int));
         if (ret < 0) {
                 perror("setsockopt IP_TOS");
-                close(mb_param->fd);
+                close(mb_param->obj->fd);
                 return ret;
         }
 #endif
 
-        if (mb_param->debug) {
-                printf("Connecting to %s\n", mb_param->ip);
+        if (mb_param->obj->debug) {
+                printf("Connecting to %s\n", mb_param->obj->ip);
         }
 
         addr.sin_family = AF_INET;
-        addr.sin_port = htons(mb_param->port);
-        addr.sin_addr.s_addr = inet_addr(mb_param->ip);
-        ret = connect(mb_param->fd, (struct sockaddr *)&addr,
+        addr.sin_port = htons(mb_param->obj->port);
+        addr.sin_addr.s_addr = inet_addr(mb_param->obj->ip);
+        ret = connect(mb_param->obj->fd, (struct sockaddr *)&addr,
                       sizeof(struct sockaddr_in));
         if (ret < 0) {
                 perror("connect");
-                close(mb_param->fd);
+                close(mb_param->obj->fd);
                 return ret;
         }
 
@@ -1771,7 +1874,7 @@ int modbus_connect(modbus_param_t *mb_param)
 {
         int ret;
 
-        if (mb_param->type_com == RTU)
+        if (mb_param->obj->type_com == RTU)
                 ret = modbus_connect_rtu(mb_param);
         else
                 ret = modbus_connect_tcp(mb_param);
@@ -1782,32 +1885,34 @@ int modbus_connect(modbus_param_t *mb_param)
 /* Closes the file descriptor in RTU mode */
 static void modbus_close_rtu(modbus_param_t *mb_param)
 {
-        if (tcsetattr(mb_param->fd, TCSANOW, &(mb_param->old_tios)) < 0)
+        if (tcsetattr(mb_param->obj->fd, TCSANOW, &(mb_param->obj->old_tios)) < 0)
                 perror("tcsetattr");
 
-        close(mb_param->fd);
+        close(mb_param->obj->fd);
 }
 
 /* Closes the network connection and socket in TCP mode */
 static void modbus_close_tcp(modbus_param_t *mb_param)
 {
-        shutdown(mb_param->fd, SHUT_RDWR);
-        close(mb_param->fd);
+        shutdown(mb_param->obj->fd, SHUT_RDWR);
+        close(mb_param->obj->fd);
 }
 
 /* Closes a modbus connection */
 void modbus_close(modbus_param_t *mb_param)
 {
-        if (mb_param->type_com == RTU)
+        if (mb_param->obj->type_com == RTU)
                 modbus_close_rtu(mb_param);
         else
                 modbus_close_tcp(mb_param);
+
+        modbus_object_free (mb_param);
 }
 
 /* Activates the debug messages */
 void modbus_set_debug(modbus_param_t *mb_param, int boolean)
 {
-        mb_param->debug = boolean;
+        mb_param->obj->debug = boolean;
 }
 
 /* Allocates 4 arrays to store coils, input status, input registers and
@@ -1900,7 +2005,7 @@ int modbus_slave_listen_tcp(modbus_param_t *mb_param, int nb_connection)
         memset(&addr, 0, sizeof(addr));
         addr.sin_family = AF_INET;
         /* If the modbus port is < to 1024, we need the setuid root. */
-        addr.sin_port = htons(mb_param->port);
+        addr.sin_port = htons(mb_param->obj->port);
         addr.sin_addr.s_addr = INADDR_ANY;
         if (bind(new_socket, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
                 perror("bind");
@@ -1923,8 +2028,8 @@ int modbus_slave_accept_tcp(modbus_param_t *mb_param, int *socket)
         socklen_t addrlen;
 
         addrlen = sizeof(struct sockaddr_in);
-        mb_param->fd = accept(*socket, (struct sockaddr *)&addr, &addrlen);
-        if (mb_param->fd < 0) {
+        mb_param->obj->fd = accept(*socket, (struct sockaddr *)&addr, &addrlen);
+        if (mb_param->obj->fd < 0) {
                 perror("accept");
                 close(*socket);
                 *socket = 0;
@@ -1933,7 +2038,7 @@ int modbus_slave_accept_tcp(modbus_param_t *mb_param, int *socket)
                        inet_ntoa(addr.sin_addr));
         }
 
-        return mb_param->fd;
+        return mb_param->obj->fd;
 }
 
 /* Closes a TCP socket */
