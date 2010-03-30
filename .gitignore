@@ -26,6 +26,7 @@ modbus.pc
 *.lo
 stamp-h1
 *.o
+src/version.h
 tests/bandwidth-master
 tests/bandwidth-slave-many-up
 tests/bandwidth-slave-one
