@@ -43,6 +43,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <poll.h>
 
 /* TCP */
 #include <sys/types.h>
@@ -55,17 +56,25 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 
 #if !defined(UINT16_MAX)
 #define UINT16_MAX 0xFFFF
 #endif
 
+#include "config.h"
+#include "modbus.h"
+
 #ifndef ENOTCONN
 # define ENOTCONN EINVAL
 #endif
 
-#include "config.h"
-#include "modbus.h"
+#ifndef NI_MAXHOST
+# define NI_MAXHOST 1025
+#endif
+#ifndef NI_MAXSERV
+# define NI_MAXSERV 32
+#endif
 
 #define UNKNOWN_ERROR_MSG "Not defined in modbus specification"
 
@@ -98,8 +107,6 @@ struct modbus_object_s
         type_com_t type_com;
         /* Flag debug */
         int debug;
-        /* TCP port */
-        int port;
         /* Device: "/dev/ttyS0", "/dev/ttyUSB0" or "/dev/tty.USA19*"
            on Mac OS X for KeySpan USB<->Serial adapters this string
            had to be made bigger on OS X as the directory+file name
@@ -121,8 +128,10 @@ struct modbus_object_s
         char parity[5];
         /* In error_treat with TCP, do a reconnect or just dump the error */
         uint8_t error_handling;
-        /* IP address */
-        char ip[16];
+        /* node */
+        char node[NI_MAXHOST];
+        /* service */
+        char service[NI_MAXSERV];
         /* Save old termios settings */
         struct termios old_tios;
 };
@@ -1535,6 +1544,57 @@ void modbus_init_rtu(modbus_param_t *mb_param, const char *device,
         mb_param->obj->slave = slave;
 }
 
+int modbus_init_tcp_pi (modbus_param_t *mb_param,
+                const char *node, const char *service,
+                int slave)
+{
+        int status;
+
+        if ((mb_param == NULL) || (node == NULL))
+                return (EINVAL);
+
+        /* Previously the struct was nulled by the init functions. This means
+         * that there may be applications out there that pass an uninitialized
+         * struct to us. Take care of that and complain. */
+        if (mb_param->obj != NULL) {
+                fprintf (stderr, "WARNING: mb_param->obj not NULL when "
+                                "calling modbus_init_tcp_pi.\n");
+                memset (mb_param, 0, sizeof (*mb_param));
+                mb_param->obj = NULL;
+        }
+
+        status = modbus_object_allocate (mb_param);
+        if (status != 0)
+                return (ENOMEM);
+
+        if (node == NULL)
+        {
+                memset (mb_param->obj->node, 0, sizeof (mb_param->obj->node));
+        }
+        else
+        {
+                SSTRNCPY (mb_param->obj->node, node);
+                mb_param->obj->node[sizeof (mb_param->obj->node) - 1] = 0;
+        }
+
+        if (service == NULL)
+        {
+                snprintf (mb_param->obj->service, sizeof (mb_param->obj->service),
+                                "%i", MODBUS_TCP_DEFAULT_PORT);
+        }
+        else
+        {
+                SSTRNCPY (mb_param->obj->service, service);
+                mb_param->obj->service[sizeof (mb_param->obj->service) - 1] = 0;
+        }
+
+        mb_param->obj->type_com = TCP;
+        mb_param->obj->error_handling = FLUSH_OR_CONNECT_ON_ERROR;
+        mb_param->obj->slave = slave;
+
+        return (0);
+} /* int modbus_init_tcp_pi */
+
 /* Initializes the modbus_param_t structure for TCP.
    - ip : "192.168.0.5"
    - port : 1099
@@ -1544,33 +1604,14 @@ void modbus_init_rtu(modbus_param_t *mb_param, const char *device,
    to 1024 because it's not necessary to be root to use this port
    number.
 */
-void modbus_init_tcp(modbus_param_t *mb_param, const char *ip, int port, int slave)
+void modbus_init_tcp(modbus_param_t *mb_param, const char *node, int port, int slave)
 {
-        int status;
+        char service[NI_MAXSERV];
 
-        if ((mb_param == NULL) || (ip == NULL))
-                return;
+        snprintf (service, sizeof (service), "%i", port);
 
-        /* Previously the struct was nulled by the init functions. This means
-         * that there may be applications out there that pass an uninitialized
-         * struct to us. Take care of that and complain. */
-        if (mb_param->obj != NULL) {
-                fprintf (stderr, "WARNING: mb_param->obj not NULL when "
-                                "calling modbus_init_tcp.\n");
-                memset (mb_param, 0, sizeof (*mb_param));
-                mb_param->obj = NULL;
-        }
-
-        status = modbus_object_allocate (mb_param);
-        if (status != 0)
-                return;
-
-        SSTRNCPY (mb_param->obj->ip, ip);
-        mb_param->obj->port = port;
-        mb_param->obj->type_com = TCP;
-        mb_param->obj->error_handling = FLUSH_OR_CONNECT_ON_ERROR;
-        mb_param->obj->slave = slave;
-}
+        modbus_init_tcp_pi (mb_param, node, service, slave);
+} /* void modbus_init_tcp */
 
 /* Define the slave number.
    The special value MODBUS_BROADCAST_ADDRESS can be used. */
@@ -1863,28 +1904,24 @@ static int modbus_connect_rtu(modbus_param_t *mb_param)
         return 0;
 }
 
-/* Establishes a modbus TCP connection with a modbus slave */
-static int modbus_connect_tcp(modbus_param_t *mb_param)
+/* Set the TCP no delay flag */
+static int set_ipv4_options (int fd)
 {
-        int ret;
         int option;
-        struct sockaddr_in addr;
+        int ret;
+        int success;
 
-        mb_param->obj->fd = socket(PF_INET, SOCK_STREAM, 0);
-        if (mb_param->obj->fd < 0) {
-                return mb_param->obj->fd;
-        }
+        if (fd < 0)
+                return -1;
 
-        /* Set the TCP no delay flag */
+        success = 0;
+
         /* SOL_TCP = IPPROTO_TCP */
         option = 1;
-        ret = setsockopt(mb_param->obj->fd, IPPROTO_TCP, TCP_NODELAY,
-                         (const void *)&option, sizeof(int));
-        if (ret < 0) {
-                perror("setsockopt TCP_NODELAY");
-                close(mb_param->obj->fd);
-                return ret;
-        }
+        ret = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
+                        (const void *)&option, sizeof(int));
+        if (ret == 0)
+                success++;
 
 #if (!HAVE_DECL___CYGWIN__)
         /**
@@ -1893,32 +1930,76 @@ static int modbus_connect_tcp(modbus_param_t *mb_param)
          **/
         /* Set the IP low delay option */
         option = IPTOS_LOWDELAY;
-        ret = setsockopt(mb_param->obj->fd, IPPROTO_IP, IP_TOS,
-                         (const void *)&option, sizeof(int));
-        if (ret < 0) {
-                perror("setsockopt IP_TOS");
-                close(mb_param->obj->fd);
-                return ret;
-        }
+        ret = setsockopt(fd, IPPROTO_TCP, IP_TOS,
+                        (const void *)&option, sizeof(int));
+        if (ret == 0)
+                success++;
 #endif
 
-        if (mb_param->obj->debug) {
-                printf("Connecting to %s\n", mb_param->obj->ip);
-        }
-
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(mb_param->obj->port);
-        addr.sin_addr.s_addr = inet_addr(mb_param->obj->ip);
-        ret = connect(mb_param->obj->fd, (struct sockaddr *)&addr,
-                      sizeof(struct sockaddr_in));
-        if (ret < 0) {
-                perror("connect");
-                close(mb_param->obj->fd);
-                return ret;
-        }
-
-        return 0;
+        return (success ? 0 : -1);
 }
+
+/* Establishes a modbus TCP connection with a modbus slave */
+static int modbus_connect_tcp(modbus_param_t *mb_param)
+{
+        struct addrinfo *ai_list;
+        struct addrinfo *ai_ptr;
+        struct addrinfo ai_hints;
+        int status;
+
+        if (mb_param == NULL)
+                return (EINVAL);
+        /* Make sure modbus_init_tcp has been called. */
+        if ((mb_param->obj->node[0] == 0)
+                        || (mb_param->obj->service[0] == 0))
+                return (EINVAL);
+
+        memset (&ai_hints, 0, sizeof (ai_hints));
+#ifdef AI_ADDRCONFIG
+        ai_hints.ai_flags |= AI_ADDRCONFIG;
+#endif
+        ai_hints.ai_family = AF_UNSPEC;
+        ai_hints.ai_socktype = SOCK_STREAM;
+        ai_hints.ai_addr = NULL;
+        ai_hints.ai_canonname = NULL;
+        ai_hints.ai_next = NULL;
+
+        ai_list = NULL;
+        status = getaddrinfo (mb_param->obj->node, mb_param->obj->service,
+                        &ai_hints, &ai_list);
+        if (status != 0)
+                return (status);
+
+        mb_param->obj->fd = -1;
+        for (ai_ptr = ai_list; ai_ptr != NULL; ai_ptr = ai_ptr->ai_next) {
+                int fd;
+
+                fd = socket (ai_ptr->ai_family,
+                                ai_ptr->ai_socktype,
+                                ai_ptr->ai_protocol);
+                if (fd < 0)
+                        continue;
+
+                if (ai_ptr->ai_family == AF_INET)
+                        set_ipv4_options (fd);
+
+                status = connect (fd, ai_ptr->ai_addr, ai_ptr->ai_addrlen);
+                if (status != 0) {
+                        close (fd);
+                        continue;
+                }
+
+                mb_param->obj->fd = fd;
+                break;
+        } /* for (ai_ptr) */
+
+        freeaddrinfo (ai_list);
+
+        if (mb_param->obj->fd >= 0)
+                return 0;
+        else
+                return (ENOTCONN);
+} /* int modbus_connect_tcp */
 
 /* Establishes a modbus connexion.
    Returns 0 on success or -1 on failure. */
@@ -2038,63 +2119,106 @@ void modbus_mapping_free(modbus_mapping_t *mb_mapping)
         free(mb_mapping->tab_input_registers);
 }
 
-/* Listens for any query from one or many modbus masters in TCP */
+/* Listens for any query from a modbus master in TCP */
 int modbus_slave_listen_tcp(modbus_param_t *mb_param, int nb_connection)
 {
-        int new_socket;
-        int yes;
-        struct sockaddr_in addr;
+        struct addrinfo *ai_list;
+        struct addrinfo *ai_ptr;
+        struct addrinfo ai_hints;
+        const char *node;
+        const char *service;
+        int listen_fd;
+        int status;
 
         CHECK_PARAM (mb_param, -1);
 
-        new_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (new_socket < 0) {
-                perror("socket");
-                return -1;
-        }
+        if (mb_param->obj->node[0] == 0)
+                node = NULL; /* == any */
+        else
+                node = mb_param->obj->node;
 
-        yes = 1;
-        if (setsockopt(new_socket, SOL_SOCKET, SO_REUSEADDR,
-                       (char *) &yes, sizeof(yes)) < 0) {
-                perror("setsockopt");
-                close(new_socket);
-                return -1;
-        }
+        if (mb_param->obj->service[0] == 0)
+                service = "502"; /* FIXME: Use define */
+        else
+                service = mb_param->obj->service;
 
-        memset(&addr, 0, sizeof(addr));
-        addr.sin_family = AF_INET;
-        /* If the modbus port is < to 1024, we need the setuid root. */
-        addr.sin_port = htons(mb_param->obj->port);
-        addr.sin_addr.s_addr = INADDR_ANY;
-        if (bind(new_socket, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-                perror("bind");
-                close(new_socket);
-                return -1;
-        }
+        memset (&ai_hints, 0, sizeof (ai_hints));
+        ai_hints.ai_flags |= AI_PASSIVE;
+#ifdef AI_ADDRCONFIG
+        ai_hints.ai_flags |= AI_ADDRCONFIG;
+#endif
+        ai_hints.ai_family = AF_UNSPEC;
+        ai_hints.ai_socktype = SOCK_STREAM;
+        ai_hints.ai_addr = NULL;
+        ai_hints.ai_canonname = NULL;
+        ai_hints.ai_next = NULL;
 
-        if (listen(new_socket, nb_connection) < 0) {
-                perror("listen");
-                close(new_socket);
+        ai_list = NULL;
+        status = getaddrinfo (node, service, &ai_hints, &ai_list);
+        if (status != 0)
                 return -1;
-        }
 
-        return new_socket;
-}
+        listen_fd = -1;
+        for (ai_ptr = ai_list; ai_ptr != NULL; ai_ptr = ai_ptr->ai_next) {
+                int fd;
+
+                fd = socket (ai_ptr->ai_family,
+                                ai_ptr->ai_socktype,
+                                ai_ptr->ai_protocol);
+                if (fd < 0) {
+                        perror ("socket");
+                        continue;
+                }
+                else {
+                        int yes = 1;
+                        status = setsockopt (fd, SOL_SOCKET, SO_REUSEADDR,
+                                        (void *) &yes, sizeof(yes));
+                        if (status != 0) {
+                                close (fd);
+                                perror ("setsockopt");
+                                continue;
+                        }
+                }
+
+                status = bind (fd, ai_ptr->ai_addr, ai_ptr->ai_addrlen);
+                if (status != 0) {
+                        close (fd);
+                        perror ("bind");
+                        continue;
+                }
+
+                status = listen (fd, /* backlog = */ nb_connection);
+                if (status != 0) {
+                        close (fd);
+                        perror ("listen");
+                        continue;
+                }
+
+                listen_fd = fd;
+                break;
+        } /* for (ai_ptr) */
+
+        freeaddrinfo (ai_list);
+
+        if (listen_fd < 0)
+                return (-ENOTCONN);
+        else
+                return (listen_fd);
+} /* int modbus_slave_listen_tcp */
 
 int modbus_slave_accept_tcp(modbus_param_t *mb_param, int *socket)
 {
-        struct sockaddr_in addr;
+        struct sockaddr_storage addr;
         socklen_t addrlen;
 
-        addrlen = sizeof(struct sockaddr_in);
-        mb_param->obj->fd = accept(*socket, (struct sockaddr *)&addr, &addrlen);
+        addrlen = sizeof (addr);
+        mb_param->obj->fd = accept (*socket, (void *) &addr, &addrlen);
         if (mb_param->obj->fd < 0) {
                 perror("accept");
                 close(*socket);
                 *socket = 0;
         } else {
-                printf("The client %s is connected\n",
-                       inet_ntoa(addr.sin_addr));
+                printf("Client connection accepted.");
         }
 
         return mb_param->obj->fd;

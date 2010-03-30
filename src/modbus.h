@@ -237,6 +237,17 @@ void modbus_init_rtu(modbus_param_t *mb_param, const char *device,
 void modbus_init_tcp(modbus_param_t *mb_param, const char *ip_address, int port,
                      int slave);
 
+/*
+ * Initializes the modbus_param_t structure for TCP in a protocol independent
+ * fashion, i.e. IPv4 / IPv6 agnostic.
+ *
+ * node:    Host name or IP address of the host to connect to.
+ * service: Service name / port number to connect to. Use NULL for the default
+ *          port, 502/TCP.
+ * */
+int modbus_init_tcp_pi (modbus_param_t *mb_param,
+                const char *node, const char *service, int slave);
+
 /* Define the slave number.
    The special value MODBUS_BROADCAST_ADDRESS can be used. */
 void modbus_set_slave(modbus_param_t *mb_param, int slave);

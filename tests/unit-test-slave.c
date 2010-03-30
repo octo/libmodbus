@@ -31,7 +31,8 @@ int main(void)
         int ret;
         int i;
 
-        modbus_init_tcp(&mb_param, "127.0.0.1", 1502, SLAVE);
+        memset (&mb_param, 0, sizeof (mb_param));
+        modbus_init_tcp_pi (&mb_param, "::0", "1502", SLAVE);
         modbus_set_debug(&mb_param, TRUE);
 
         ret = modbus_mapping_new(&mb_mapping,

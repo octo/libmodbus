@@ -43,7 +43,7 @@ int main(void)
 /*      modbus_init_rtu(&mb_param, "/dev/ttyS0", 19200, "none", 8, 1, SLAVE); */
 
         /* TCP */
-        modbus_init_tcp(&mb_param, "127.0.0.1", 1502, SLAVE);
+        modbus_init_tcp_pi (&mb_param, "::1", "1502", SLAVE);
 /*        modbus_set_debug(&mb_param, TRUE); */
 
         if (modbus_connect(&mb_param) == -1) {
