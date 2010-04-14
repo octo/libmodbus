@@ -65,6 +65,10 @@
 
 #define UNKNOWN_ERROR_MSG "Not defined in modbus specification"
 
+/* Exported variables */
+const int modbus_version_g = MB_VERSION;
+const char * const modbus_version_string_g = MB_VERSION_STRING;
+
 /* This structure reduces the number of params in functions and so
  * optimizes the speed of execution (~ 37%). */
 typedef struct {

@@ -38,6 +38,9 @@ extern "C" {
 #define MB_VERSION \
         MB_VERSION_ENCODE(MB_VERSION_MAJOR, MB_VERSION_MINOR, MB_VERSION_PATCH)
 
+extern const int modbus_version_g;
+extern const char * const modbus_version_string_g;
+
 int modbus_version (void);
 const char *modbus_version_string (void);
 
