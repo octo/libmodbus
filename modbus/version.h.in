@@ -20,7 +20,7 @@
  */
 
 #ifndef MODBUS_VERSION_H
-#define MODBUS_VERSION_H 1
+#define MODBUS_VERSION_H
 
 #ifdef __cplusplus
 extern "C" {
