@@ -60,10 +60,8 @@
 #define UINT16_MAX 0xFFFF
 #endif
 
-#include "config.h"
-/* XXX: "version.h" must be included before "modbus.h". */
-#include "version.h"
-#include "modbus.h"
+#include <config.h>
+#include <modbus/modbus.h>
 
 #define UNKNOWN_ERROR_MSG "Not defined in modbus specification"
 
@@ -449,7 +447,7 @@ static int modbus_send(modbus_param_t *mb_param, uint8_t *query,
         if (mb_param->type_com == RTU)
                 ret = write(mb_param->fd, query, query_length);
         else
-                ret = send(mb_param->fd, query, query_length, 0);
+                ret = send(mb_param->fd, query, query_length, MSG_NOSIGNAL);
 
         /* Return the number of bytes written (0 to n)
            or SOCKET_FAILURE on error */
@@ -1990,22 +1988,22 @@ uint8_t get_byte_from_bits(const uint8_t *src, int address, int nb_bits)
 /* Read a float from 4 bytes in Modbus format */
 float modbus_read_float(const uint16_t *src)
 {
-        float real;
-        uint32_t ireal = (src[1] << 16) + src[0];
-        real = *((float *)&ireal);
+        float r = 0.0f;
+        uint32_t i;
 
-        return real;
+        i = (((uint32_t)src[1]) << 16) + src[0];
+        memcpy(&r, &i, sizeof (r));
+        return r;
 }
 
 /* Write a float to 4 bytes in Modbus format */
 void modbus_write_float(float real, uint16_t *dest)
 {
-        uint32_t ireal;
+        uint32_t i = 0;
 
-        ireal = *((uint32_t *)&real);
-        /* Implicit mask 0xFFFF */
-        dest[0] = ireal;
-        dest[1] = ireal >> 16;
+        memcpy(&i, &real, sizeof (i));
+        dest[0] = (uint16_t)i;
+        dest[1] = (uint16_t)(i >> 16);
 }
 
 int modbus_version (void)

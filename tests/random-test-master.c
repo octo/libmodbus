@@ -1,5 +1,5 @@
 /*
- * Copyright © 2001-2008 Stéphane Raimbault <stephane.raimbault@gmail.com>
+ * Copyright © 2001-2010 Stéphane Raimbault <stephane.raimbault@gmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,9 +20,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-/* XXX: "version.h" must be included before "modbus.h". */
-#include "version.h"
-#include "modbus.h"
+#include <modbus/modbus.h>
 
 /* The goal of this program is to check all major functions of
    libmodbus:

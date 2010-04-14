@@ -33,9 +33,7 @@
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 
-#ifndef MODBUS_VERSION_H
-# include <modbus/version.h>
-#endif
+#include <modbus/version.h>
 
 #ifdef __cplusplus
 extern "C" {
