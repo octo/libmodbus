@@ -136,6 +136,11 @@ struct modbus_object_s
         struct termios old_tios;
 };
 
+/* Exported version */
+const unsigned int mb_version_major = MB_VERSION_MAJOR;
+const unsigned int mb_version_minor = MB_VERSION_MINOR;
+const unsigned int mb_version_micro = MB_VERSION_MICRO;
+
 /* This structure reduces the number of params in functions and so
  * optimizes the speed of execution (~ 37%). */
 typedef struct {

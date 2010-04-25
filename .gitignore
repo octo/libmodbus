@@ -19,7 +19,8 @@ install-sh
 libtool
 ltmain.sh
 missing
-modbus.pc
+libmodbus.pc
+version.h
 .deps
 .libs
 *.la
@@ -33,3 +34,4 @@ tests/random-test-master
 tests/random-test-slave
 tests/unit-test-master
 tests/unit-test-slave
+tests/version
