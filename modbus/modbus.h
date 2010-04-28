@@ -247,15 +247,17 @@ void modbus_init_tcp(modbus_param_t *mb_param, const char *ip_address, int port,
  * service: Service name / port number to connect to. Use NULL for the default
  *          port, 502/TCP.
  * */
-int modbus_init_tcp_pi (modbus_param_t *mb_param,
-                const char *node, const char *service, int slave);
+int modbus_init_tcp_pi(modbus_param_t *mb_param,
+                       const char *node,
+                       const char *service,
+                       int slave);
 
 /* Define the slave number.
    The special value MODBUS_BROADCAST_ADDRESS can be used. */
 void modbus_set_slave(modbus_param_t *mb_param, int slave);
 
 /* Retrieve the slave number. Returns less than zero on failure. */
-int modbus_get_slave (modbus_param_t *mb_param);
+int modbus_get_slave(modbus_param_t *mb_param);
 
 /* By default, the error handling mode used is CONNECT_ON_ERROR.
 

@@ -78,22 +78,22 @@
 
 #define UNKNOWN_ERROR_MSG "Not defined in modbus specification"
 
-#define SSTRNCPY(dst,src) do {                 \
-        strncpy ((dst), (src), sizeof (dst));  \
-        (dst)[sizeof (dst) - 1] = 0;           \
+#define SSTRNCPY(dst,src) do {                      \
+        strncpy((dst),(src), sizeof (dst));         \
+        (dst)[sizeof (dst) - 1] = 0;                \
 } while (0)
 
-#define CHECK_PARAM_VOID(p) do {                   \
+#define CHECK_PARAM_VOID(p) do {                    \
         if (((p) == NULL) || ((p)->priv == NULL)) { \
-                errno = EINVAL;                    \
-                perror (__func__);                 \
-                return;                            \
-        }                                          \
+                errno = EINVAL;                     \
+                perror(__func__);                   \
+                return;                             \
+        }                                           \
 } while (0)
 
-#define CHECK_PARAM(p,eret) do {                   \
+#define CHECK_PARAM(p,eret) do {                    \
         if (((p) == NULL) || ((p)->priv == NULL))   \
-                return (eret);                     \
+                return (eret);                      \
 } while (0)
 
 /* This structure is byte-aligned */
@@ -265,33 +265,33 @@ static void error_treat(modbus_param_t *mb_param, int code, const char *string)
         }
 }
 
-static int modbus_private_allocate (modbus_param_t *mb_param)
+static int modbus_private_allocate(modbus_param_t *mb_param)
 {
         if (mb_param == NULL)
                 return (EINVAL);
         if (mb_param->priv != NULL)
                 return (0);
 
-        mb_param->priv = malloc (sizeof (*mb_param->priv));
+        mb_param->priv = malloc(sizeof (*mb_param->priv));
         if (mb_param->priv == NULL)
                 return (errno);
-        memset (mb_param->priv, 0, sizeof (*mb_param->priv));
+        memset(mb_param->priv, 0, sizeof (*mb_param->priv));
         return (0);
 } /* int modbus_private_allocate */
 
-static int modbus_private_free (modbus_param_t *mb_param)
+static int modbus_private_free(modbus_param_t *mb_param)
 {
         if (mb_param == NULL)
                 return (EINVAL);
 
-        free (mb_param->priv);
+        free(mb_param->priv);
         mb_param->priv = NULL;
         return (0);
 } /* int modbus_private_free */
 
 void modbus_flush(modbus_param_t *mb_param)
 {
-        CHECK_PARAM_VOID (mb_param);
+        CHECK_PARAM_VOID(mb_param);
 
         if (mb_param->priv->type_com == RTU) {
                 tcflush(mb_param->priv->fd, TCIOFLUSH);
@@ -787,7 +787,7 @@ static int receive_msg(modbus_param_t *mb_param,
 */
 int modbus_slave_receive(modbus_param_t *mb_param, int sockfd, uint8_t *query)
 {
-        CHECK_PARAM (mb_param, -EINVAL);
+        CHECK_PARAM(mb_param, -EINVAL);
 
         if (sockfd != -1) {
                 mb_param->priv->fd = sockfd;
@@ -857,7 +857,7 @@ static int modbus_receive(modbus_param_t *mb_param,
                 if (query_nb_value == response_nb_value) {
                         ret = response_nb_value;
                 } else {
-                        char *s_error = malloc(64 * sizeof(char));
+                        char *s_error = malloc(64 * sizeof (char));
                         sprintf(s_error, "Quantity not corresponding to the query (%d != %d)",
                                 response_nb_value, query_nb_value);
                         ret = INVALID_DATA;
@@ -891,7 +891,7 @@ static int modbus_receive(modbus_param_t *mb_param,
                                 /* The chances are low to hit this
                                    case but it can avoid a vicious
                                    segfault */
-                                char *s_error = malloc(64 * sizeof(char));
+                                char *s_error = malloc(64 * sizeof (char));
                                 sprintf(s_error,
                                         "Invalid exception code %d",
                                         response[offset + 1]);
@@ -966,7 +966,7 @@ void modbus_slave_manage(modbus_param_t *mb_param, const uint8_t *query,
         int resp_length = 0;
         sft_t sft;
 
-        CHECK_PARAM_VOID (mb_param);
+        CHECK_PARAM_VOID(mb_param);
 
         if (slave != mb_param->priv->slave && slave != MODBUS_BROADCAST_ADDRESS) {
                 // Ignores the query (not for me)
@@ -1164,7 +1164,7 @@ static int read_io_status(modbus_param_t *mb_param, int function,
         uint8_t query[MIN_QUERY_LENGTH];
         uint8_t response[MAX_MESSAGE_LENGTH];
 
-        CHECK_PARAM (mb_param, INVALID_DATA);
+        CHECK_PARAM(mb_param, INVALID_DATA);
 
         query_length = build_query_basis(mb_param, function,
                                          start_addr, nb, query);
@@ -1204,7 +1204,7 @@ int read_coil_status(modbus_param_t *mb_param, int start_addr,
 {
         int status;
 
-        CHECK_PARAM (mb_param, INVALID_DATA);
+        CHECK_PARAM(mb_param, INVALID_DATA);
 
         if (nb > MAX_STATUS) {
                 printf("ERROR Too many coils status requested (%d > %d)\n",
@@ -1228,7 +1228,7 @@ int read_input_status(modbus_param_t *mb_param, int start_addr,
 {
         int status;
 
-        CHECK_PARAM (mb_param, INVALID_DATA);
+        CHECK_PARAM(mb_param, INVALID_DATA);
 
         if (nb > MAX_STATUS) {
                 printf("ERROR Too many input status requested (%d > %d)\n",
@@ -1254,7 +1254,7 @@ static int read_registers(modbus_param_t *mb_param, int function,
         uint8_t query[MIN_QUERY_LENGTH];
         uint8_t response[MAX_MESSAGE_LENGTH];
 
-        CHECK_PARAM (mb_param, INVALID_DATA);
+        CHECK_PARAM(mb_param, INVALID_DATA);
 
         if (nb > MAX_REGISTERS) {
                 printf("ERROR Too many holding registers requested (%d > %d)\n",
@@ -1292,7 +1292,7 @@ int read_holding_registers(modbus_param_t *mb_param,
 {
         int status;
 
-        CHECK_PARAM (mb_param, INVALID_DATA);
+        CHECK_PARAM(mb_param, INVALID_DATA);
 
         if (nb > MAX_REGISTERS) {
                 printf("ERROR Too many holding registers requested (%d > %d)\n",
@@ -1312,7 +1312,7 @@ int read_input_registers(modbus_param_t *mb_param, int start_addr, int nb,
 {
         int status;
 
-        CHECK_PARAM (mb_param, INVALID_DATA);
+        CHECK_PARAM(mb_param, INVALID_DATA);
 
         if (nb > MAX_REGISTERS) {
                 printf("ERROR Too many input registers requested (%d > %d)\n",
@@ -1335,7 +1335,7 @@ static int set_single(modbus_param_t *mb_param, int function,
         int query_length;
         uint8_t query[MIN_QUERY_LENGTH];
 
-        CHECK_PARAM (mb_param, -EINVAL);
+        CHECK_PARAM(mb_param, -EINVAL);
 
         query_length = build_query_basis(mb_param, function,
                                          addr, value, query);
@@ -1356,7 +1356,7 @@ int force_single_coil(modbus_param_t *mb_param, int coil_addr, int state)
 {
         int status;
 
-        CHECK_PARAM (mb_param, -EINVAL);
+        CHECK_PARAM(mb_param, -EINVAL);
 
         if (state)
                 state = 0xFF00;
@@ -1372,7 +1372,7 @@ int preset_single_register(modbus_param_t *mb_param, int reg_addr, int value)
 {
         int status;
 
-        CHECK_PARAM (mb_param, -EINVAL);
+        CHECK_PARAM(mb_param, -EINVAL);
 
         status = set_single(mb_param, FC_PRESET_SINGLE_REGISTER,
                             reg_addr, value);
@@ -1393,7 +1393,7 @@ int force_multiple_coils(modbus_param_t *mb_param, int start_addr, int nb,
 
         uint8_t query[MAX_MESSAGE_LENGTH];
 
-        CHECK_PARAM (mb_param, INVALID_DATA);
+        CHECK_PARAM(mb_param, INVALID_DATA);
 
         if (nb > MAX_STATUS) {
                 printf("ERROR Writing to too many coils (%d > %d)\n",
@@ -1444,7 +1444,7 @@ int preset_multiple_registers(modbus_param_t *mb_param, int start_addr, int nb,
 
         uint8_t query[MAX_MESSAGE_LENGTH];
 
-        CHECK_PARAM (mb_param, INVALID_DATA);
+        CHECK_PARAM(mb_param, INVALID_DATA);
 
         if (nb > MAX_REGISTERS) {
                 printf("ERROR Trying to write to too many registers (%d > %d)\n",
@@ -1478,7 +1478,7 @@ int report_slave_id(modbus_param_t *mb_param, uint8_t *data_dest)
         int query_length;
         uint8_t query[MIN_QUERY_LENGTH];
 
-        CHECK_PARAM (mb_param, -EINVAL);
+        CHECK_PARAM(mb_param, -EINVAL);
 
         query_length = build_query_basis(mb_param, FC_REPORT_SLAVE_ID, 0, 0, query);
 
@@ -1622,13 +1622,13 @@ void modbus_init_tcp(modbus_param_t *mb_param, const char *node, int port, int s
    The special value MODBUS_BROADCAST_ADDRESS can be used. */
 void modbus_set_slave(modbus_param_t *mb_param, int slave)
 {
-        CHECK_PARAM_VOID (mb_param);
+        CHECK_PARAM_VOID(mb_param);
         mb_param->priv->slave = slave;
 }
 
 int modbus_get_slave (modbus_param_t *mb_param)
 {
-        CHECK_PARAM (mb_param, -EINVAL);
+        CHECK_PARAM(mb_param, -EINVAL);
         return (mb_param->priv->slave);
 } /* int modbus_get_slave */
 
@@ -1644,7 +1644,7 @@ int modbus_get_slave (modbus_param_t *mb_param)
 void modbus_set_error_handling(modbus_param_t *mb_param,
                                error_handling_t error_handling)
 {
-        CHECK_PARAM_VOID (mb_param);
+        CHECK_PARAM_VOID(mb_param);
 
         if (error_handling == FLUSH_OR_CONNECT_ON_ERROR ||
             error_handling == NOP_ON_ERROR) {
@@ -1684,7 +1684,7 @@ static int modbus_connect_rtu(modbus_param_t *mb_param)
         /* Save */
         tcgetattr(mb_param->priv->fd, &(mb_param->priv->old_tios));
 
-        memset(&tios, 0, sizeof(struct termios));
+        memset(&tios, 0, sizeof (struct termios));
 
         /* C_ISPEED     Input baud (new interface)
            C_OSPEED     Output baud (new interface)
@@ -1924,7 +1924,7 @@ static int set_ipv4_options (int fd)
         /* SOL_TCP = IPPROTO_TCP */
         option = 1;
         ret = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
-                        (const void *)&option, sizeof(int));
+                        (const void *)&option, sizeof (int));
         if (ret == 0)
                 success++;
 
@@ -1936,7 +1936,7 @@ static int set_ipv4_options (int fd)
         /* Set the IP low delay option */
         option = IPTOS_LOWDELAY;
         ret = setsockopt(fd, IPPROTO_TCP, IP_TOS,
-                        (const void *)&option, sizeof(int));
+                        (const void *)&option, sizeof (int));
         if (ret == 0)
                 success++;
 #endif
@@ -2012,7 +2012,7 @@ int modbus_connect(modbus_param_t *mb_param)
 {
         int ret;
 
-        CHECK_PARAM (mb_param, -1);
+        CHECK_PARAM(mb_param, -1);
 
         if (mb_param->priv->type_com == RTU)
                 ret = modbus_connect_rtu(mb_param);
@@ -2041,7 +2041,7 @@ static void modbus_close_tcp(modbus_param_t *mb_param)
 /* Closes a modbus connection */
 void modbus_close(modbus_param_t *mb_param)
 {
-        CHECK_PARAM_VOID (mb_param);
+        CHECK_PARAM_VOID(mb_param);
 
         if (mb_param->priv->type_com == RTU)
                 modbus_close_rtu(mb_param);
@@ -2054,7 +2054,7 @@ void modbus_close(modbus_param_t *mb_param)
 /* Activates the debug messages */
 void modbus_set_debug(modbus_param_t *mb_param, int boolean)
 {
-        CHECK_PARAM_VOID (mb_param);
+        CHECK_PARAM_VOID(mb_param);
         mb_param->priv->debug = boolean;
 }
 
@@ -2070,18 +2070,18 @@ int modbus_mapping_new(modbus_mapping_t *mb_mapping,
         /* 0X */
         mb_mapping->nb_coil_status = nb_coil_status;
         mb_mapping->tab_coil_status =
-                (uint8_t *) malloc(nb_coil_status * sizeof(uint8_t));
+                (uint8_t *) malloc(nb_coil_status * sizeof (uint8_t));
         memset(mb_mapping->tab_coil_status, 0,
-               nb_coil_status * sizeof(uint8_t));
+               nb_coil_status * sizeof (uint8_t));
         if (mb_mapping->tab_coil_status == NULL)
                 return -1;
 
         /* 1X */
         mb_mapping->nb_input_status = nb_input_status;
         mb_mapping->tab_input_status =
-                (uint8_t *) malloc(nb_input_status * sizeof(uint8_t));
+                (uint8_t *) malloc(nb_input_status * sizeof (uint8_t));
         memset(mb_mapping->tab_input_status, 0,
-               nb_input_status * sizeof(uint8_t));
+               nb_input_status * sizeof (uint8_t));
         if (mb_mapping->tab_input_status == NULL) {
                 free(mb_mapping->tab_coil_status);
                 return -1;
@@ -2090,9 +2090,9 @@ int modbus_mapping_new(modbus_mapping_t *mb_mapping,
         /* 4X */
         mb_mapping->nb_holding_registers = nb_holding_registers;
         mb_mapping->tab_holding_registers =
-                (uint16_t *) malloc(nb_holding_registers * sizeof(uint16_t));
+                (uint16_t *) malloc(nb_holding_registers * sizeof (uint16_t));
         memset(mb_mapping->tab_holding_registers, 0,
-               nb_holding_registers * sizeof(uint16_t));
+               nb_holding_registers * sizeof (uint16_t));
         if (mb_mapping->tab_holding_registers == NULL) {
                 free(mb_mapping->tab_coil_status);
                 free(mb_mapping->tab_input_status);
@@ -2102,9 +2102,9 @@ int modbus_mapping_new(modbus_mapping_t *mb_mapping,
         /* 3X */
         mb_mapping->nb_input_registers = nb_input_registers;
         mb_mapping->tab_input_registers =
-                (uint16_t *) malloc(nb_input_registers * sizeof(uint16_t));
+                (uint16_t *) malloc(nb_input_registers * sizeof (uint16_t));
         memset(mb_mapping->tab_input_registers, 0,
-               nb_input_registers * sizeof(uint16_t));
+               nb_input_registers * sizeof (uint16_t));
         if (mb_mapping->tab_input_registers == NULL) {
                 free(mb_mapping->tab_coil_status);
                 free(mb_mapping->tab_input_status);
@@ -2135,7 +2135,7 @@ int modbus_slave_listen_tcp(modbus_param_t *mb_param, int nb_connection)
         int listen_fd;
         int status;
 
-        CHECK_PARAM (mb_param, -1);
+        CHECK_PARAM(mb_param, -1);
 
         if (mb_param->priv->node[0] == 0)
                 node = NULL; /* == any */
@@ -2147,7 +2147,7 @@ int modbus_slave_listen_tcp(modbus_param_t *mb_param, int nb_connection)
         else
                 service = mb_param->priv->service;
 
-        memset (&ai_hints, 0, sizeof (ai_hints));
+        memset(&ai_hints, 0, sizeof (ai_hints));
         ai_hints.ai_flags |= AI_PASSIVE;
 #ifdef AI_ADDRCONFIG
         ai_hints.ai_flags |= AI_ADDRCONFIG;
@@ -2159,7 +2159,7 @@ int modbus_slave_listen_tcp(modbus_param_t *mb_param, int nb_connection)
         ai_hints.ai_next = NULL;
 
         ai_list = NULL;
-        status = getaddrinfo (node, service, &ai_hints, &ai_list);
+        status = getaddrinfo(node, service, &ai_hints, &ai_list);
         if (status != 0)
                 return -1;
 
@@ -2167,35 +2167,35 @@ int modbus_slave_listen_tcp(modbus_param_t *mb_param, int nb_connection)
         for (ai_ptr = ai_list; ai_ptr != NULL; ai_ptr = ai_ptr->ai_next) {
                 int fd;
 
-                fd = socket (ai_ptr->ai_family,
+                fd = socket(ai_ptr->ai_family,
                                 ai_ptr->ai_socktype,
                                 ai_ptr->ai_protocol);
                 if (fd < 0) {
-                        perror ("socket");
+                        perror("socket");
                         continue;
                 }
                 else {
                         int yes = 1;
-                        status = setsockopt (fd, SOL_SOCKET, SO_REUSEADDR,
-                                        (void *) &yes, sizeof(yes));
+                        status = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
+                                        (void *) &yes, sizeof (yes));
                         if (status != 0) {
-                                close (fd);
-                                perror ("setsockopt");
+                                close(fd);
+                                perror("setsockopt");
                                 continue;
                         }
                 }
 
-                status = bind (fd, ai_ptr->ai_addr, ai_ptr->ai_addrlen);
+                status = bind(fd, ai_ptr->ai_addr, ai_ptr->ai_addrlen);
                 if (status != 0) {
-                        close (fd);
-                        perror ("bind");
+                        close(fd);
+                        perror("bind");
                         continue;
                 }
 
-                status = listen (fd, /* backlog = */ nb_connection);
+                status = listen(fd, /* backlog = */ nb_connection);
                 if (status != 0) {
-                        close (fd);
-                        perror ("listen");
+                        close(fd);
+                        perror("listen");
                         continue;
                 }
 
@@ -2203,7 +2203,7 @@ int modbus_slave_listen_tcp(modbus_param_t *mb_param, int nb_connection)
                 break;
         } /* for (ai_ptr) */
 
-        freeaddrinfo (ai_list);
+        freeaddrinfo(ai_list);
 
         if (listen_fd < 0)
                 return (-ENOTCONN);
@@ -2217,7 +2217,7 @@ int modbus_slave_accept_tcp(modbus_param_t *mb_param, int *socket)
         socklen_t addrlen;
 
         addrlen = sizeof (addr);
-        mb_param->priv->fd = accept (*socket, (void *) &addr, &addrlen);
+        mb_param->priv->fd = accept(*socket,(void *) &addr, &addrlen);
         if (mb_param->priv->fd < 0) {
                 perror("accept");
                 close(*socket);
