@@ -93,7 +93,7 @@
 
 #define CHECK_PARAM(p,eret) do {                    \
         if (((p) == NULL) || ((p)->priv == NULL))   \
-                return (eret);                      \
+                return eret;                        \
 } while (0)
 
 /* This structure is byte-aligned */
@@ -268,25 +268,25 @@ static void error_treat(modbus_param_t *mb_param, int code, const char *string)
 static int modbus_private_allocate(modbus_param_t *mb_param)
 {
         if (mb_param == NULL)
-                return (EINVAL);
+                return EINVAL;
         if (mb_param->priv != NULL)
-                return (0);
+                return 0;
 
         mb_param->priv = malloc(sizeof (*mb_param->priv));
         if (mb_param->priv == NULL)
-                return (errno);
+                return errno;
         memset(mb_param->priv, 0, sizeof (*mb_param->priv));
-        return (0);
+        return 0;
 } /* int modbus_private_allocate */
 
 static int modbus_private_free(modbus_param_t *mb_param)
 {
         if (mb_param == NULL)
-                return (EINVAL);
+                return EINVAL;
 
         free(mb_param->priv);
         mb_param->priv = NULL;
-        return (0);
+        return 0;
 } /* int modbus_private_free */
 
 void modbus_flush(modbus_param_t *mb_param)
@@ -1556,7 +1556,7 @@ int modbus_init_tcp_pi (modbus_param_t *mb_param,
         int status;
 
         if ((mb_param == NULL) || (node == NULL))
-                return (EINVAL);
+                return EINVAL;
 
         /* Previously the struct was nulled by the init functions. This means
          * that there may be applications out there that pass an uninitialized
@@ -1570,7 +1570,7 @@ int modbus_init_tcp_pi (modbus_param_t *mb_param,
 
         status = modbus_private_allocate (mb_param);
         if (status != 0)
-                return (ENOMEM);
+                return ENOMEM;
 
         if (node == NULL)
         {
@@ -1597,7 +1597,7 @@ int modbus_init_tcp_pi (modbus_param_t *mb_param,
         mb_param->priv->error_handling = FLUSH_OR_CONNECT_ON_ERROR;
         mb_param->priv->slave = slave;
 
-        return (0);
+        return 0;
 } /* int modbus_init_tcp_pi */
 
 /* Initializes the modbus_param_t structure for TCP.
@@ -1629,7 +1629,7 @@ void modbus_set_slave(modbus_param_t *mb_param, int slave)
 int modbus_get_slave (modbus_param_t *mb_param)
 {
         CHECK_PARAM(mb_param, -EINVAL);
-        return (mb_param->priv->slave);
+        return mb_param->priv->slave;
 } /* int modbus_get_slave */
 
 /* By default, the error handling mode used is FLUSH_OR_CONNECT_ON_ERROR.
@@ -1953,11 +1953,11 @@ static int modbus_connect_tcp(modbus_param_t *mb_param)
         int status;
 
         if (mb_param == NULL)
-                return (EINVAL);
+                return EINVAL;
         /* Make sure modbus_init_tcp has been called. */
         if ((mb_param->priv->node[0] == 0)
                         || (mb_param->priv->service[0] == 0))
-                return (EINVAL);
+                return EINVAL;
 
         memset (&ai_hints, 0, sizeof (ai_hints));
 #ifdef AI_ADDRCONFIG
@@ -1973,7 +1973,7 @@ static int modbus_connect_tcp(modbus_param_t *mb_param)
         status = getaddrinfo (mb_param->priv->node, mb_param->priv->service,
                         &ai_hints, &ai_list);
         if (status != 0)
-                return (status);
+                return status;
 
         mb_param->priv->fd = -1;
         for (ai_ptr = ai_list; ai_ptr != NULL; ai_ptr = ai_ptr->ai_next) {
@@ -2003,7 +2003,7 @@ static int modbus_connect_tcp(modbus_param_t *mb_param)
         if (mb_param->priv->fd >= 0)
                 return 0;
         else
-                return (ENOTCONN);
+                return ENOTCONN;
 } /* int modbus_connect_tcp */
 
 /* Establishes a modbus connexion.
@@ -2206,9 +2206,9 @@ int modbus_slave_listen_tcp(modbus_param_t *mb_param, int nb_connection)
         freeaddrinfo(ai_list);
 
         if (listen_fd < 0)
-                return (-ENOTCONN);
+                return -ENOTCONN;
         else
-                return (listen_fd);
+                return listen_fd;
 } /* int modbus_slave_listen_tcp */
 
 int modbus_slave_accept_tcp(modbus_param_t *mb_param, int *socket)
