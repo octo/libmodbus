@@ -152,14 +152,14 @@ typedef enum { RTU=0, TCP } type_com_t;
 typedef enum { FLUSH_OR_CONNECT_ON_ERROR, NOP_ON_ERROR } error_handling_t;
 
 /* Opaque structure for internal use. */
-struct modbus_object_s;
-typedef struct modbus_object_s modbus_object_t;
+struct modbus_private_s;
+typedef struct modbus_private_s modbus_private_t;
 
 /* This structure is a little hack to allow programs that have been written
  * with older versions to still allocate "modbus_param_t". The pointer to the
  * object is allocated with one of the modbus_init_* functions. */
 typedef struct {
-        modbus_object_t *obj;
+        modbus_private_t *priv;
 } modbus_param_t;
 
 typedef struct {
