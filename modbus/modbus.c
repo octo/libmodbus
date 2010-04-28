@@ -1528,19 +1528,19 @@ void modbus_init_rtu(modbus_param_t *mb_param, const char *device,
          * that there may be applications out there that pass an uninitialized
          * struct to us. Take care of that and complain. */
         if (mb_param->priv != NULL) {
-                fprintf (stderr, "WARNING: mb_param->priv not NULL when "
+                fprintf(stderr, "WARNING: mb_param->priv not NULL when "
                                 "calling modbus_init_rtu.\n");
-                memset (mb_param, 0, sizeof (*mb_param));
+                memset(mb_param, 0, sizeof (*mb_param));
                 mb_param->priv = NULL;
         }
 
-        status = modbus_private_allocate (mb_param);
+        status = modbus_private_allocate(mb_param);
         if (status != 0)
                 return;
 
-        SSTRNCPY (mb_param->priv->device, device);
+        SSTRNCPY(mb_param->priv->device, device);
         mb_param->priv->baud = baud;
-        SSTRNCPY (mb_param->priv->parity, parity);
+        SSTRNCPY(mb_param->priv->parity, parity);
         mb_param->priv->debug = FALSE;
         mb_param->priv->data_bit = data_bit;
         mb_param->priv->stop_bit = stop_bit;
@@ -1549,7 +1549,7 @@ void modbus_init_rtu(modbus_param_t *mb_param, const char *device,
         mb_param->priv->slave = slave;
 }
 
-int modbus_init_tcp_pi (modbus_param_t *mb_param,
+int modbus_init_tcp_pi(modbus_param_t *mb_param,
                 const char *node, const char *service,
                 int slave)
 {
@@ -1562,34 +1562,34 @@ int modbus_init_tcp_pi (modbus_param_t *mb_param,
          * that there may be applications out there that pass an uninitialized
          * struct to us. Take care of that and complain. */
         if (mb_param->priv != NULL) {
-                fprintf (stderr, "WARNING: mb_param->priv not NULL when "
+                fprintf(stderr, "WARNING: mb_param->priv not NULL when "
                                 "calling modbus_init_tcp_pi.\n");
-                memset (mb_param, 0, sizeof (*mb_param));
+                memset(mb_param, 0, sizeof (*mb_param));
                 mb_param->priv = NULL;
         }
 
-        status = modbus_private_allocate (mb_param);
+        status = modbus_private_allocate(mb_param);
         if (status != 0)
                 return ENOMEM;
 
         if (node == NULL)
         {
-                memset (mb_param->priv->node, 0, sizeof (mb_param->priv->node));
+                memset(mb_param->priv->node, 0, sizeof (mb_param->priv->node));
         }
         else
         {
-                SSTRNCPY (mb_param->priv->node, node);
+                SSTRNCPY(mb_param->priv->node, node);
                 mb_param->priv->node[sizeof (mb_param->priv->node) - 1] = 0;
         }
 
         if (service == NULL)
         {
-                snprintf (mb_param->priv->service, sizeof (mb_param->priv->service),
+                snprintf(mb_param->priv->service, sizeof (mb_param->priv->service),
                                 "%i", MODBUS_TCP_DEFAULT_PORT);
         }
         else
         {
-                SSTRNCPY (mb_param->priv->service, service);
+                SSTRNCPY(mb_param->priv->service, service);
                 mb_param->priv->service[sizeof (mb_param->priv->service) - 1] = 0;
         }
 
@@ -1613,9 +1613,9 @@ void modbus_init_tcp(modbus_param_t *mb_param, const char *node, int port, int s
 {
         char service[NI_MAXSERV];
 
-        snprintf (service, sizeof (service), "%i", port);
+        snprintf(service, sizeof (service), "%i", port);
 
-        modbus_init_tcp_pi (mb_param, node, service, slave);
+        modbus_init_tcp_pi(mb_param, node, service, slave);
 } /* void modbus_init_tcp */
 
 /* Define the slave number.
@@ -1626,7 +1626,7 @@ void modbus_set_slave(modbus_param_t *mb_param, int slave)
         mb_param->priv->slave = slave;
 }
 
-int modbus_get_slave (modbus_param_t *mb_param)
+int modbus_get_slave(modbus_param_t *mb_param)
 {
         CHECK_PARAM(mb_param, -EINVAL);
         return mb_param->priv->slave;
@@ -1910,7 +1910,7 @@ static int modbus_connect_rtu(modbus_param_t *mb_param)
 }
 
 /* Set the TCP no delay flag */
-static int set_ipv4_options (int fd)
+static int set_ipv4_options(int fd)
 {
         int option;
         int ret;
@@ -1959,7 +1959,7 @@ static int modbus_connect_tcp(modbus_param_t *mb_param)
                         || (mb_param->priv->service[0] == 0))
                 return EINVAL;
 
-        memset (&ai_hints, 0, sizeof (ai_hints));
+        memset(&ai_hints, 0, sizeof (ai_hints));
 #ifdef AI_ADDRCONFIG
         ai_hints.ai_flags |= AI_ADDRCONFIG;
 #endif
@@ -1970,7 +1970,7 @@ static int modbus_connect_tcp(modbus_param_t *mb_param)
         ai_hints.ai_next = NULL;
 
         ai_list = NULL;
-        status = getaddrinfo (mb_param->priv->node, mb_param->priv->service,
+        status = getaddrinfo(mb_param->priv->node, mb_param->priv->service,
                         &ai_hints, &ai_list);
         if (status != 0)
                 return status;
@@ -1979,18 +1979,18 @@ static int modbus_connect_tcp(modbus_param_t *mb_param)
         for (ai_ptr = ai_list; ai_ptr != NULL; ai_ptr = ai_ptr->ai_next) {
                 int fd;
 
-                fd = socket (ai_ptr->ai_family,
+                fd = socket(ai_ptr->ai_family,
                                 ai_ptr->ai_socktype,
                                 ai_ptr->ai_protocol);
                 if (fd < 0)
                         continue;
 
                 if (ai_ptr->ai_family == AF_INET)
-                        set_ipv4_options (fd);
+                        set_ipv4_options(fd);
 
-                status = connect (fd, ai_ptr->ai_addr, ai_ptr->ai_addrlen);
+                status = connect(fd, ai_ptr->ai_addr, ai_ptr->ai_addrlen);
                 if (status != 0) {
-                        close (fd);
+                        close(fd);
                         continue;
                 }
 
@@ -1998,7 +1998,7 @@ static int modbus_connect_tcp(modbus_param_t *mb_param)
                 break;
         } /* for (ai_ptr) */
 
-        freeaddrinfo (ai_list);
+        freeaddrinfo(ai_list);
 
         if (mb_param->priv->fd >= 0)
                 return 0;
@@ -2048,7 +2048,7 @@ void modbus_close(modbus_param_t *mb_param)
         else
                 modbus_close_tcp(mb_param);
 
-        modbus_private_free (mb_param);
+        modbus_private_free(mb_param);
 }
 
 /* Activates the debug messages */
